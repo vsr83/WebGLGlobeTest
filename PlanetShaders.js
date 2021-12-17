@@ -127,6 +127,44 @@ class PlanetShaders
 
         }
         `;
+
+        this.vertShaderGrid = `#version 300 es
+            // an attribute is an input (in) to a vertex shader.
+            // It will receive data from a buffer
+            in vec4 a_position;
+            in vec4 a_color;
+
+            // A matrix to transform the positions by
+            uniform mat4 u_matrix;
+
+            // a varying the color to the fragment shader
+            out vec4 v_color;
+
+            // all shaders have a main function
+            void main() 
+            {
+                // Multiply the position by the matrix.
+                gl_Position = u_matrix * a_position;
+
+                // Pass the color to the fragment shader.
+                v_color = a_color;
+            }
+            `;
+
+        this.fragShaderGrid = `#version 300 es
+            precision highp float;
+
+            // the varied color passed from the vertex shader
+            in vec4 v_color;
+
+            // we need to declare an output for the fragment shader
+            out vec4 outColor;
+
+            void main() 
+            {
+                outColor = v_color;
+            }
+            `;
     }
 
     /**
@@ -141,11 +179,16 @@ class PlanetShaders
     {
         let gl = this.gl;
         this.program = webglUtils.createProgramFromSources(gl, [this.vertShaderSphere, this.fragShaderSphere]);
+        this.programGrid = webglUtils.createProgramFromSources(gl, [this.vertShaderGrid, this.fragShaderGrid]);
 
         // Get attribute and uniform locations.
         this.posAttrLocation = gl.getAttribLocation(this.program, "a_position");
         this.texAttrLocation = gl.getAttribLocation(this.program, "a_texcoord");
         this.matrixLocation = gl.getUniformLocation(this.program, "u_matrix");
+
+        this.posAttrLocationGrid = gl.getAttribLocation(this.programGrid, "a_position");
+        this.colorAttrLocationGrid = gl.getAttribLocation(this.programGrid, "a_color");
+        this.matrixLocationGrid = gl.getUniformLocation(this.programGrid, "u_matrix");
 
         this.vertexArrayPlanet = gl.createVertexArray();
         gl.bindVertexArray(this.vertexArrayPlanet);
@@ -153,16 +196,47 @@ class PlanetShaders
         // Load planet vertex coordinates into a buffer.
         let positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        this.setGeometry(gl);
+        this.setGeometry();
         gl.enableVertexAttribArray(this.posAttrLocation);
         gl.vertexAttribPointer(this.posAttrLocation, 3, gl.FLOAT, false, 0, 0);
 
         // Load texture vertex coordinates into a buffer.
         const texcoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
-        this.setTexcoords(gl);
+        this.setTexcoords();
         gl.enableVertexAttribArray(this.texAttrLocation);
-        gl.vertexAttribPointer(this.texAttrLocation, 2, gl.FLOAT, true, 0, 0);
+        gl.vertexAttribPointer(this.texAttrLocation, 2, gl.FLOAT, true, 0, 0);        
+
+        // Load grid coordinates.
+        this.vertexArrayGrid = gl.createVertexArray();
+        gl.bindVertexArray(this.vertexArrayGrid);
+
+        this.positionBufferGrid = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBufferGrid);
+        this.setGeometryGrid();
+        gl.enableVertexAttribArray(this.posAttrLocationGrid);
+        gl.vertexAttribPointer(this.posAttrLocationGrid, 3, gl.FLOAT, false, 0, 0);
+      
+        this.colorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+        this.setColorsGrid();
+        gl.enableVertexAttribArray(this.colorAttrLocationGrid);
+        gl.vertexAttribPointer(this.colorAttrLocationGrid, 3, gl.UNSIGNED_BYTE, true, 0, 0);
+
+        // Initialize buffer for map coordinates.
+        this.vertexArrayMap = gl.createVertexArray();
+        gl.bindVertexArray(this.vertexArrayMap);
+
+        this.positionBufferMap = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBufferMap);
+        gl.enableVertexAttribArray(this.posAttrLocationGrid);
+        gl.vertexAttribPointer(this.posAttrLocationGrid, 3, gl.FLOAT, false, 0, 0);
+      
+        this.colorBufferMap = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBufferMap);
+        gl.enableVertexAttribArray(this.colorAttrLocationGrid);
+        gl.vertexAttribPointer(this.colorAttrLocationGrid, 3, gl.UNSIGNED_BYTE, true, 0, 0);
+
 
         // Load textures:
         const imageDay = new Image();
@@ -183,6 +257,8 @@ class PlanetShaders
         });
             
         gl.useProgram(this.program);
+
+        this.loadMaps();
     }
 
     /**
@@ -199,6 +275,7 @@ class PlanetShaders
     {
         let gl = this.gl;
 
+        gl.useProgram(this.program);
         // Create a texture.
         var texture = gl.createTexture();
 
@@ -374,7 +451,6 @@ class PlanetShaders
         const gl = this.gl;
 
         gl.useProgram(this.program);
-        gl.bindVertexArray(this.vertexArrayPlanet);
         gl.uniformMatrix4fv(this.matrixLocation, false, viewMatrix);
 
         const raLocation = gl.getUniformLocation(this.program, "u_rA");
@@ -384,11 +460,262 @@ class PlanetShaders
         gl.uniform1f(declLocation, decl);
         gl.uniform1f(lstLocation, LST);
 
-        // Draw the geometry.
-        const primitiveType = gl.TRIANGLES;
-        const offset = 0;
+        // Draw the sphere.
+        gl.bindVertexArray(this.vertexArrayPlanet);
         const nTri = this.nLon * this.nLat * 2;
         const count = nTri * 3;
-        gl.drawArrays(primitiveType, offset, count);
+        gl.drawArrays(gl.TRIANGLES, 0, count);
+
+        gl.useProgram(this.programGrid);
+        gl.bindVertexArray(this.vertexArrayGrid);
+        gl.uniformMatrix4fv(this.matrixLocationGrid, false, viewMatrix);
+
+        // Draw the grid.
+        gl.drawArrays(gl.LINES, 0, this.gridLines * 2);
+
+        gl.bindVertexArray(this.vertexArrayMap);
+        gl.drawArrays(gl.LINES, 0, this.gridLinesMap * 2);
+    }
+
+    // Fill the current ARRAY_BUFFER buffer with grid.
+    setGeometryGrid() 
+    {
+        let gl = this.gl;
+        const points = [];
+        let lonStep = 2.0;
+        let latStep = 15.0;
+        let nLines = 0;
+
+        let gridCoeff = 1.002;
+
+        for (let lat = -90.0; lat < 90.0; lat += latStep)
+        {
+            for (let lon = -180.0; lon < 180.0; lon += lonStep)
+            {
+                const xStart = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.cosd(lon);
+                const yStart = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.sind(lon);
+                const zStart = gridCoeff * this.b * MathUtils.sind(lat);
+                const xEnd = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.cosd(lon + lonStep);
+                const yEnd = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.sind(lon + lonStep);
+                const zEnd = gridCoeff * this.b * MathUtils.sind(lat);
+                points.push([xStart, yStart, zStart]);
+                points.push([xEnd, yEnd, zEnd]);
+                nLines++;
+            }
+        }
+        latStep = 2.0;
+        lonStep = 15.0;
+        for (let lon = -180.0; lon < 180.0; lon += lonStep)
+        {
+            for (let lat = -90.0; lat < 90.0; lat += latStep)
+            {
+                const xStart = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.cosd(lon);
+                const yStart = gridCoeff * this.a * MathUtils.cosd(lat) * MathUtils.sind(lon);
+                const zStart = gridCoeff * this.b * MathUtils.sind(lat);
+                const xEnd = gridCoeff * this.a * MathUtils.cosd(lat + latStep) * MathUtils.cosd(lon);
+                const yEnd = gridCoeff * this.a * MathUtils.cosd(lat + latStep) * MathUtils.sind(lon);
+                const zEnd = gridCoeff * this.b * MathUtils.sind(lat + latStep);
+                points.push([xStart, yStart, zStart]);
+                points.push([xEnd, yEnd, zEnd]);
+                nLines++;
+            }
+        }
+
+        this.gridLines = nLines;
+        var positions = new Float32Array(this.gridLines * 6);
+
+        for (let indPoint = 0; indPoint < points.length; indPoint++)
+        {
+            let point = points[indPoint];
+            let indStart = indPoint * 3;
+            positions[indStart] = point[0];
+            positions[indStart + 1] = point[1];
+            positions[indStart + 2] = point[2];
+        }
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        /*var positions = new Float32Array([
+                // left column front
+                -5,  0,  0,
+                5,  0,  0,
+    
+                0,  -5,  0,
+                0,  5,  0,
+                
+                0,  0,  -5,
+                0,  0,  5,
+        ]);
+
+        this.gridLines = positions.length / 6;
+        console.log(this.gridLines);
+    
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+        */
+    }
+
+    // Fill the current ARRAY_BUFFER buffer with colors for the 'F'.
+    setColorsMap() 
+    {
+        let gl = this.gl;
+        const colorArray = new Uint8Array(this.gridLinesMap * 6);
+
+        for (let indPoint = 0; indPoint < this.gridLinesMap * 2; indPoint++)
+        {
+            const startIndex = indPoint * 3;
+            colorArray[startIndex] = 80;
+            colorArray[startIndex + 1] = 80;
+            colorArray[startIndex + 2] = 120;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBufferMap);
+        gl.bufferData(gl.ARRAY_BUFFER, colorArray, gl.STATIC_DRAW);
+    }
+  
+    // Fill the current ARRAY_BUFFER buffer with colors for the 'F'.
+    setColorsGrid() 
+    {
+        let gl = this.gl;
+        const colorArray = new Uint8Array(this.gridLines * 6);
+
+        for (let indPoint = 0; indPoint < this.gridLines * 2; indPoint++)
+        {
+            const startIndex = indPoint * 3;
+            colorArray[startIndex] = 80;
+            colorArray[startIndex + 1] = 80;
+            colorArray[startIndex + 2] = 80;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, colorArray, gl.STATIC_DRAW);
+    }
+
+    loadMapPolygons()
+    {
+        const points = [];
+        let nLines = 0;
+        let gl = this.gl;
+
+        let gridCoeff = 1.002;
+
+        for (let indPoly = 0; indPoly < this.polygons.length; indPoly++)
+        {
+            const poly = this.polygons[indPoly];
+
+            for (let indPoint = 0; indPoint < poly.lon.length - 1; indPoint++)
+            {
+                const lonStart = poly.lon[indPoint];
+                const latStart = poly.lat[indPoint];
+                const lonEnd   = poly.lon[indPoint + 1];
+                const latEnd   = poly.lat[indPoint + 1];
+
+                const xStart = gridCoeff * this.a * MathUtils.cosd(latStart) * MathUtils.cosd(lonStart);
+                const yStart = gridCoeff * this.a * MathUtils.cosd(latStart) * MathUtils.sind(lonStart);
+                const zStart = gridCoeff * this.b * MathUtils.sind(latStart);
+                const xEnd = gridCoeff * this.a * MathUtils.cosd(latEnd) * MathUtils.cosd(lonEnd);
+                const yEnd = gridCoeff * this.a * MathUtils.cosd(latEnd) * MathUtils.sind(lonEnd);
+                const zEnd = gridCoeff * this.b * MathUtils.sind(latEnd);
+                points.push([-xStart, yStart, -zStart]);
+                points.push([-xEnd, yEnd, -zEnd]);
+                nLines++;
+            }
+        }
+
+        this.gridLinesMap = nLines;
+        const positions = new Float32Array(this.gridLinesMap * 6);
+
+        for (let indPoint = 0; indPoint < points.length; indPoint++)
+        {
+            let point = points[indPoint];
+            let indStart = indPoint * 3;
+            positions[indStart] = point[0];
+            positions[indStart + 1] = point[1];
+            positions[indStart + 2] = point[2];
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBufferMap);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        this.setColorsMap();
+
+    }
+
+    loadMaps()
+    {
+        let polygons = [];
+        /**
+         * Add polygon to the polygon list.
+         * The method transforms the polygon from a list of lon-lat pairs to arrays
+         * of lat and lon coordinates.
+         * 
+         * @param {*} polygon 
+         *     Polygon as a list of lon-lat pairs.
+         * @returns The number of points in the polygon.
+         */
+        let addPolygon = function(polygon)
+        {
+            var numPoints = polygon.length;
+            var pointsLon = [];
+            var pointsLat = [];
+
+            for (var indPoint = 0; indPoint < numPoints; indPoint++)
+            {
+                pointsLon.push(polygon[indPoint][0]);
+                pointsLat.push(polygon[indPoint][1]);
+            }
+
+            polygons.push({lon : pointsLon, lat : pointsLat});
+
+            return numPoints;
+        }
+
+        this.polygons = [];
+        const instance = this;
+
+        var xmlHTTP = new XMLHttpRequest();
+        xmlHTTP.onreadystatechange = function()
+        {
+            console.log("readyState: " + this.readyState);
+            console.log("status:     " + this.status);
+        
+            if (this.readyState == 4 && this.status == 200)
+            {
+                // Parse JSON and initialize World map.
+                let dataJSON = JSON.parse(this.responseText);
+                console.log(dataJSON);
+
+                var features = dataJSON.features;
+                var numPointsTotal = 0;
+        
+                for (var index = 0; index < features.length; index++)
+                {
+                    // Read polygons and multi-polygons.
+                    var feature = features[index];
+                    var geometry = feature.geometry;
+                    // TBD:
+                    //var properties = feature.properties;
+                    
+                    if (geometry.type === "Polygon")
+                    {
+                        var coordinates = geometry.coordinates[0];
+                        var numPoints = geometry.coordinates[0].length;
+                        numPointsTotal += addPolygon(coordinates);
+                    }
+                    if (geometry.type === "MultiPolygon")
+                    {
+                        var numPolygons = geometry.coordinates.length;
+        
+                        for (var indPolygon = 0; indPolygon < numPolygons; indPolygon++)
+                        {
+                            var coordinates = geometry.coordinates[indPolygon][0];
+                            numPointsTotal += addPolygon(coordinates);
+                        }
+                    }
+                }
+                console.log("Added " + numPointsTotal + " points");
+                instance.polygons = polygons;
+                console.log(instance.polygons);
+                instance.loadMapPolygons();
+            }
+        }
+        xmlHTTP.open("GET", "json/worldmap.json", true);
+        xmlHTTP.send();
+                
     }
 }
