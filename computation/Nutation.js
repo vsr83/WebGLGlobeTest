@@ -125,6 +125,7 @@ Nutation.nutData = [
  */
 Nutation.nutationTerms = function(T)
 {
+        /*
     const T2 = T * T;
     const T3 = T2 * T;
 
@@ -176,5 +177,6 @@ Nutation.nutationTerms = function(T)
         dpsi = dpsi + factor * (data[A0J] + data[A1J] * T) * MathUtils.sind(angle);
         deps = deps + factor * (data[B0J] + data[B1J] * T) * MathUtils.cosd(angle);
     }
-    return {eps : eps, deps : deps % 360.0, dpsi : dpsi % 360.0};
+    */
+    return {eps : 0, deps : 0 % 360.0, dpsi : 0 % 360.0};
 }
