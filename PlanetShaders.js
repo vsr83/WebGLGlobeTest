@@ -62,6 +62,7 @@ class PlanetShaders
         // The texture.
         uniform sampler2D u_imageDay;
         uniform sampler2D u_imageNight;
+        uniform bool u_draw_texture;
 
         // 
         uniform float u_decl;
@@ -83,47 +84,54 @@ class PlanetShaders
         
         void main() 
         {
-            float lon = 2.0 * PI * (v_texcoord.x - 0.5);
-            float lat = PI * (v_texcoord.y - 0.5);
-            float LSTlon = u_LST + lon;
-            float h = LSTlon - u_rA;
-            float altitude = asin(cos(h)*cos(u_decl)*cos(lat) + sin(u_decl)*sin(lat));
-            altitude = rad2deg(altitude);
+            if (u_draw_texture)
+            {
+                float lon = 2.0 * PI * (v_texcoord.x - 0.5);
+                float lat = PI * (v_texcoord.y - 0.5);
+                float LSTlon = u_LST + lon;
+                float h = LSTlon - u_rA;
+                float altitude = asin(cos(h)*cos(u_decl)*cos(lat) + sin(u_decl)*sin(lat));
+                altitude = rad2deg(altitude);
 
-            if (abs(lon) < 0.01 || abs(lat) < 0.01 || abs(lon - PI*0.5) < 0.01)
-            {
-                //outColor = texture(u_imageDay, v_texcoord);
-            }
-            else
-            {
-                //outColor = texture(u_imageNight, v_texcoord);
-            }
+                if (abs(lon) < 0.01 || abs(lat) < 0.01 || abs(lon - PI*0.5) < 0.01)
+                {
+                    //outColor = texture(u_imageDay, v_texcoord);
+                }
+                else
+                {
+                    //outColor = texture(u_imageNight, v_texcoord);
+                }
 
-            if (altitude > 0.0)
-            {
-                // Day. 
-                outColor = texture(u_imageDay, v_texcoord);
+                if (altitude > 0.0)
+                {
+                    // Day. 
+                    outColor = texture(u_imageDay, v_texcoord);
+                }
+                else if (altitude > -6.0)
+                {
+                    // Civil twilight.
+                    outColor = (0.5*texture(u_imageNight, v_texcoord) + 1.5*texture(u_imageDay, v_texcoord)) * 0.5;
+                }
+                else if (altitude > -12.0)
+                {
+                    // Nautical twilight.
+                    outColor = (texture(u_imageNight, v_texcoord) + texture(u_imageDay, v_texcoord)) * 0.5;
+                }
+                else if (altitude > -18.0)
+                {
+                    // Astronomical twilight.
+                    outColor = (1.5*texture(u_imageNight, v_texcoord) + 0.5*texture(u_imageDay, v_texcoord)) * 0.5;
+                }
+                else
+                {
+                    // Night.
+                    outColor = texture(u_imageNight, v_texcoord);
+                }
             }
-            else if (altitude > -6.0)
+            else 
             {
-                // Civil twilight.
-                outColor = (0.5*texture(u_imageNight, v_texcoord) + 1.5*texture(u_imageDay, v_texcoord)) * 0.5;
+                outColor = vec4(1.0, 1.0, 1.0, 1.0);
             }
-            else if (altitude > -12.0)
-            {
-                // Nautical twilight.
-                outColor = (texture(u_imageNight, v_texcoord) + texture(u_imageDay, v_texcoord)) * 0.5;
-            }
-            else if (altitude > -18.0)
-            {
-                // Astronomical twilight.
-                outColor = (1.5*texture(u_imageNight, v_texcoord) + 0.5*texture(u_imageDay, v_texcoord)) * 0.5;
-            }
-            else
-            {
-                // Night.
-                outColor = texture(u_imageNight, v_texcoord);
-            }    
 
         }
         `;
@@ -441,8 +449,14 @@ class PlanetShaders
      *      The right ascension of the light source.
      * @param {*} decl
      *      The declination of the light source.
+     * @param {*} drawTexture
+     *      Whether to draw the texture.
+     * @param {*} drawGrid
+     *      Whether to draw the grid.
+     * @param {*} drawMap 
+     *      Whether to draw the map.
      */
-    draw(viewMatrix, rA, decl, LST)
+    draw(viewMatrix, rA, decl, LST, drawTexture, drawGrid, drawMap)
     {
         if (this.numTextures < 2)
         {
@@ -456,9 +470,19 @@ class PlanetShaders
         const raLocation = gl.getUniformLocation(this.program, "u_rA");
         const declLocation = gl.getUniformLocation(this.program, "u_decl");
         const lstLocation = gl.getUniformLocation(this.program, "u_LST");
+        const drawTextureLocation = gl.getUniformLocation(this.program, "u_draw_texture");
         gl.uniform1f(raLocation, rA);
         gl.uniform1f(declLocation, decl);
         gl.uniform1f(lstLocation, LST);
+
+        if (drawTexture)
+        {
+            gl.uniform1f(drawTextureLocation, 1);
+        }
+        else
+        {
+            gl.uniform1f(drawTextureLocation, 0);            
+        }
 
         // Draw the sphere.
         gl.bindVertexArray(this.vertexArrayPlanet);
@@ -471,10 +495,16 @@ class PlanetShaders
         gl.uniformMatrix4fv(this.matrixLocationGrid, false, viewMatrix);
 
         // Draw the grid.
-        gl.drawArrays(gl.LINES, 0, this.gridLines * 2);
-
-        gl.bindVertexArray(this.vertexArrayMap);
-        gl.drawArrays(gl.LINES, 0, this.gridLinesMap * 2);
+        if (drawGrid)
+        {
+            gl.drawArrays(gl.LINES, 0, this.gridLines * 2);
+        }
+        
+        if (drawMap)
+        {
+            gl.bindVertexArray(this.vertexArrayMap);
+            gl.drawArrays(gl.LINES, 0, this.gridLinesMap * 2);
+        }
     }
 
     // Fill the current ARRAY_BUFFER buffer with grid.
